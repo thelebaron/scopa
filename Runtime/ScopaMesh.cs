@@ -31,12 +31,13 @@ namespace Scopa {
         static List<Face> allFaces = new List<Face>(8192);
         static HashSet<Face> discardedFaces = new HashSet<Face>(8192);
 
-        static List<Vector3> verts = new List<Vector3>(4096);
-        static List<Vector3> faceVerts = new List<Vector3>(64);
-        static List<int> tris = new List<int>(8192);
-        static List<int> faceTris = new List<int>(32);
-        static List<Vector2> uvs = new List<Vector2>(4096);
-        static List<Vector2> faceUVs = new List<Vector2>(64);
+        static                  List<Vector3> verts     = new List<Vector3>(4096);
+        static                  List<Vector3> faceVerts = new List<Vector3>(64);
+        static                  List<int>     tris      = new List<int>(8192);
+        static                  List<int>     faceTris  = new List<int>(32);
+        static                  List<Vector2> uvs       = new List<Vector2>(4096);
+        static                  List<Vector2> faceUVs   = new List<Vector2>(64);
+        private static readonly int           BaseMap   = Shader.PropertyToID("_BaseMap");
 
         const float EPSILON = 0.01f;
 
@@ -336,22 +337,28 @@ namespace Scopa {
             return inside;
         }
 
-        public class MeshBuildingJobGroup {
+        public class MeshBuildingJobGroup 
+        {
 
-            NativeArray<int> faceVertexOffsets, faceTriIndexCounts; // index = i
+            NativeArray<int>     faceVertexOffsets, faceTriIndexCounts; // index = i
             NativeArray<Vector3> faceVertices;
             NativeArray<Vector4> faceU, faceV; // index = i, .w = scale
             NativeArray<Vector2> faceShift; // index = i
-            int vertCount, triIndexCount;
+            NativeArray<float>   faceAngle;
+            NativeArray<float3>  faceNormals;
+            int                  vertCount, triIndexCount;
 
             public Mesh.MeshDataArray outputMesh;
             Mesh newMesh;
             JobHandle jobHandle;
 
-            public MeshBuildingJobGroup(string meshName, Vector3 meshOrigin, IEnumerable<Solid> solids, ScopaMapConfig config, ScopaMapConfig.MaterialOverride textureFilter = null, bool includeDiscardedFaces = false) {
+            public MeshBuildingJobGroup(string meshName, Vector3 meshOrigin, IEnumerable<Solid> solids, ScopaMapConfig config, ScopaMapConfig.MaterialOverride textureFilter = null, bool includeDiscardedFaces = false) 
+            {
                 var faceList = new List<Face>();
-                foreach( var solid in solids) {
-                    foreach(var face in solid.Faces) {
+                foreach( var solid in solids) 
+                {
+                    foreach(var face in solid.Faces) 
+                    {
                         // if ( face.Vertices == null || face.Vertices.Count == 0) // this shouldn't happen though
                         //     continue;
 
@@ -367,7 +374,8 @@ namespace Scopa {
 
                 faceVertexOffsets = new NativeArray<int>(faceList.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                 faceTriIndexCounts = new NativeArray<int>(faceList.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-                for(int i=0; i<faceList.Count; i++) {
+                for(int i=0; i<faceList.Count; i++) 
+                {
                     faceVertexOffsets[i] = vertCount;
                     vertCount += faceList[i].Vertices.Count;
                     faceTriIndexCounts[i] = triIndexCount;
@@ -378,13 +386,25 @@ namespace Scopa {
                 faceU = new NativeArray<Vector4>(faceList.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                 faceV = new NativeArray<Vector4>(faceList.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                 faceShift = new NativeArray<Vector2>(faceList.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-                for(int i=0; i<faceList.Count; i++) {
-                    for(int v=faceVertexOffsets[i]; v < (i<faceVertexOffsets.Length-1 ? faceVertexOffsets[i+1] : vertCount); v++) {
+                faceAngle = new NativeArray<float>(faceList.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                faceNormals = new NativeArray<float3>(faceList.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                
+                // try add rotation to uvs
+                for(int i=0; i<faceList.Count; i++) 
+                {
+                    for(int v=faceVertexOffsets[i]; v < (i<faceVertexOffsets.Length-1 ? faceVertexOffsets[i+1] : vertCount); v++)
+                    {
                         faceVertices[v] = faceList[i].Vertices[v-faceVertexOffsets[i]].ToUnity();
                     }
+
+                    var f = faceList[i];
+                    var r = faceList[i].Rotation;
+                    
                     faceU[i] = new Vector4(faceList[i].UAxis.X, faceList[i].UAxis.Y, faceList[i].UAxis.Z, faceList[i].XScale);
                     faceV[i] = new Vector4(faceList[i].VAxis.X, faceList[i].VAxis.Y, faceList[i].VAxis.Z, faceList[i].YScale);
                     faceShift[i] = new Vector2(faceList[i].XShift, faceList[i].YShift);
+                    faceAngle[i] = faceList[i].Rotation;
+                    faceNormals[i] = new float3(faceList[i].Plane.Normal.X, faceList[i].Plane.Normal.Y, faceList[i].Plane.Normal.Z);
                 }
 
                 outputMesh = Mesh.AllocateWritableMeshData(1);
@@ -396,29 +416,38 @@ namespace Scopa {
                 );
                 meshData.SetIndexBufferParams(triIndexCount, IndexFormat.UInt32);
                  
-                var jobData = new MeshBuildingJob();
-                jobData.faceVertexOffsets = faceVertexOffsets;
-                jobData.faceTriIndexCounts = faceTriIndexCounts;
+                var meshBuildingJob = new MeshBuildingJob
+                {
+                    faceVertexOffsets  = faceVertexOffsets,
+                    faceTriIndexCounts = faceTriIndexCounts,
+                    faceVertices       = faceVertices.Reinterpret<float3>(),
+                    faceU              = faceU.Reinterpret<float4>(),
+                    faceV              = faceV.Reinterpret<float4>(),
+                    faceShift          = faceShift.Reinterpret<float2>(),
+                    faceAngle          = faceAngle,
+                    FaceNormals        = faceNormals,
+                    meshData           = outputMesh[0],
+                    scalingFactor      = config.scalingFactor,
+                    globalTexelScale   = config.globalTexelScale
+                };
 
-                #if SCOPA_USE_BURST
-                jobData.faceVertices = faceVertices.Reinterpret<float3>();
-                jobData.faceU = faceU.Reinterpret<float4>();
-                jobData.faceV = faceV.Reinterpret<float4>();
-                jobData.faceShift = faceShift.Reinterpret<float2>();
-                #else
-                jobData.faceVertices = faceVertices;
-                jobData.faceU = faceU;
-                jobData.faceV = faceV;
-                jobData.faceShift = faceShift;
-                #endif
+                // Maintexture does not exist in URP
+                //jobData.textureWidth = textureFilter?.material?.mainTexture != null ? textureFilter.material.mainTexture.width : config.defaultTexSize;
+                //jobData.textureHeight = textureFilter?.material?.mainTexture != null ? textureFilter.material.mainTexture.height : config.defaultTexSize;
 
-                jobData.meshData = outputMesh[0];
-                jobData.scalingFactor = config.scalingFactor;
-                jobData.globalTexelScale = config.globalTexelScale;
-                jobData.textureWidth = textureFilter?.material?.mainTexture != null ? textureFilter.material.mainTexture.width : config.defaultTexSize;
-                jobData.textureHeight = textureFilter?.material?.mainTexture != null ? textureFilter.material.mainTexture.height : config.defaultTexSize;
-                jobData.meshOrigin = meshOrigin;
-                jobHandle = jobData.Schedule(faceList.Count, 128);
+
+                //var hasTexture = textureFilter?.material?.HasTexture(BaseMap) != null;
+                //if (hasTexture)
+                {
+                    //jobData.textureWidth = textureFilter.material.GetTexture(BaseMap) != null ? textureFilter.material.GetTexture(BaseMap).width : config.defaultTexSize;
+                }
+                // fix for URP, builtin is obsolete for this project
+                // todo use ifdef for URP/HDRP/Builtin
+                meshBuildingJob.textureWidth = textureFilter?.material?.GetTexture(BaseMap) != null ? textureFilter.material.GetTexture(BaseMap).width : config.defaultTexSize;
+                meshBuildingJob.textureHeight = textureFilter?.material?.GetTexture(BaseMap) != null ? textureFilter.material.GetTexture(BaseMap).height : config.defaultTexSize;
+                
+                meshBuildingJob.meshOrigin = meshOrigin;
+                jobHandle = meshBuildingJob.Schedule(faceList.Count, 128);
 
                 newMesh = new Mesh();
                 newMesh.name = meshName;
@@ -435,12 +464,26 @@ namespace Scopa {
                 newMesh.RecalculateNormals();
                 newMesh.RecalculateBounds();
 
+                // ok this is a total hack, create another mesh because there might be unknown issues with the meshdata from the job
+                Mesh mesh = new Mesh();
+                mesh.vertices  = newMesh.vertices;
+                mesh.triangles = newMesh.triangles;
+                mesh.uv        = newMesh.uv;
+                mesh.uv2       = newMesh.uv2;
+                mesh.normals   = newMesh.normals;
+                mesh.colors    = newMesh.colors;
+                mesh.tangents  = newMesh.tangents;
+                mesh.RecalculateNormals();
+                mesh.RecalculateBounds();
+                
                 faceVertexOffsets.Dispose();
                 faceTriIndexCounts.Dispose();
                 faceVertices.Dispose();
                 faceU.Dispose();
                 faceV.Dispose();
                 faceShift.Dispose();
+                faceAngle.Dispose();
+                faceNormals.Dispose();
 
                 return newMesh;
             }
@@ -454,17 +497,12 @@ namespace Scopa {
         {
             [ReadOnlyAttribute] public NativeArray<int> faceVertexOffsets, faceTriIndexCounts; // index = i
 
-            #if SCOPA_USE_BURST
             [ReadOnlyAttribute] public NativeArray<float3> faceVertices;
             [ReadOnlyAttribute] public NativeArray<float4> faceU, faceV; // index = i, .w = scale
             [ReadOnlyAttribute] public NativeArray<float2> faceShift; // index = i
-            [ReadOnlyAttribute] public float3 meshOrigin;
-            #else            
-            [ReadOnlyAttribute] public NativeArray<Vector3> faceVertices;
-            [ReadOnlyAttribute] public NativeArray<Vector4> faceU, faceV; // index = i, .w = scale
-            [ReadOnlyAttribute] public NativeArray<Vector2> faceShift; // index = i
-            [ReadOnlyAttribute] public Vector3 meshOrigin;
-            #endif
+            [ReadOnlyAttribute] public NativeArray<float>  faceAngle;
+            [ReadOnlyAttribute] public NativeArray<float3>  FaceNormals;
+            [ReadOnlyAttribute] public float3              meshOrigin;
             
             [NativeDisableParallelForRestriction]
             public Mesh.MeshData meshData;
@@ -476,30 +514,76 @@ namespace Scopa {
                 var offsetStart = faceVertexOffsets[i];
                 var offsetEnd = i<faceVertexOffsets.Length-1 ? faceVertexOffsets[i+1] : faceVertices.Length;
 
-                #if SCOPA_USE_BURST
                 var outputVerts = meshData.GetVertexData<float3>();
                 var outputUVs = meshData.GetVertexData<float2>(2);
-                #else
-                var outputVerts = meshData.GetVertexData<Vector3>();
-                var outputUVs = meshData.GetVertexData<Vector2>(2);
-                #endif
+
 
                 var outputTris = meshData.GetIndexData<int>();
 
                 // add all verts, normals, and UVs
-                for( int n=offsetStart; n<offsetEnd; n++ ) {
+                for( int n=offsetStart; n<offsetEnd; n++ ) 
+                {
                     outputVerts[n] = faceVertices[n] * scalingFactor - meshOrigin;
-                    #if SCOPA_USE_BURST
-                    outputUVs[n] = new Vector2(
-                        (math.dot(faceVertices[n], faceU[i].xyz / faceU[i].w) + (faceShift[i].x % textureWidth)) / (textureWidth),
-                        (math.dot(faceVertices[n], faceV[i].xyz / -faceV[i].w) + (-faceShift[i].y % textureHeight)) / (textureHeight)
-                    ) * globalTexelScale;
-                    #else
-                    outputUVs[n] = new Vector2(
-                        (Vector3.Dot(faceVertices[n], faceU[i] / faceU[i].w) + (faceShift[i].x % textureWidth)) / (textureWidth),
-                        (Vector3.Dot(faceVertices[n], faceV[i] / -faceV[i].w) + (-faceShift[i].y % textureHeight)) / (textureHeight)
-                    ) * globalTexelScale;
-                    #endif
+                    
+                    var uv = float2.zero;
+                                            
+                    if(faceAngle[i] == 0f || faceAngle[i] % 360 == 0) 
+                    {
+                        var shift = new float2(
+                            (faceShift[i].x % textureWidth),
+                            (-faceShift[i].y % textureHeight)
+                        );
+                        // Calculate U and V without rotation and adjustment first
+                        uv = new float2(
+                            CalculateUCoordinate(faceVertices[n], faceU[i], faceAngle[i]),
+                            CalculateVCoordinate(faceVertices[n], faceV[i], faceAngle[i])
+                        );
+                        uv += shift;
+                        uv /= new float2(textureWidth, textureHeight);
+                    
+                        uv = RotateUV(uv, faceAngle[i]);
+
+                        // Assign the final UV coordinates to outputUVs[n]
+                        outputUVs[n] = uv * globalTexelScale;
+                    }
+                    
+                    // notes - in tb shift x/y is always texture space.
+                    else
+                    {
+                        var shift = new float2(
+                            (-faceShift[i].x % textureWidth),
+                            (-faceShift[i].y % textureHeight)
+                        );
+                        // swap shift left to right depending on angle greater than 180
+                        if (faceAngle[i] >= 90f)
+                        {
+                            var newShift = new float2(
+                                (-faceShift[i].y % textureHeight),
+                                (faceShift[i].x % textureWidth)
+                            );
+                            shift = newShift;
+                        }
+                        // Calculate U and V without rotation and adjustment first
+                        uv = new float2(
+                            CalculateUCoordinate(faceVertices[n], faceU[i], faceAngle[i]),
+                            CalculateVCoordinate(faceVertices[n], faceV[i], faceAngle[i])
+                        );
+                        uv += shift;
+                        uv /= new float2(textureWidth, textureHeight);
+                    
+                        uv = RotateUV(uv, faceAngle[i]);
+
+                        // Assign the final UV coordinates to outputUVs[n]
+                        outputUVs[n] = uv * globalTexelScale;
+                    }
+                    
+                    /*
+                   // original code from scopa
+                   outputUVs[n] = new Vector2(
+                       (math.dot(faceVertices[n], faceU[i].xyz / faceU[i].w) + (faceShift[i].x % textureWidth)) / (textureWidth),
+                       (math.dot(faceVertices[n], faceV[i].xyz / -faceV[i].w) + (-faceShift[i].y % textureHeight)) / (textureHeight)
+                           ) * globalTexelScale;
+                   */
                 }
 
                 // verts are already in correct order, add as basic fan pattern (since we know it's a convex face)
@@ -508,6 +592,34 @@ namespace Scopa {
                     outputTris[faceTriIndexCounts[i]+(t-2)*3+1] = offsetStart + t-1;
                     outputTris[faceTriIndexCounts[i]+(t-2)*3+2] = offsetStart + t;
                 }
+            }
+            
+            private static float CalculateUCoordinate(float3 vertex, float4 faceU, float angleDegrees) 
+            {
+                return math.dot(vertex, faceU.xyz / faceU.w);
+            }
+
+            private static float CalculateVCoordinate(float3 vertex, float4 faceV, float angleDegrees) 
+            {
+                return math.dot(vertex, faceV.xyz / -faceV.w);
+            }
+
+            private static float2 RotateUV(float2 uv, float angleDegrees) 
+            {
+                var angle    = math.radians(-angleDegrees);
+                var cosAngle = math.cos(angle);
+                var sinAngle = math.sin(angle);
+    
+                // Rotation matrix
+                var u = uv.x * cosAngle - uv.y * sinAngle;
+                var v = uv.x * sinAngle + uv.y * cosAngle;
+
+                return new float2(u, v);
+            }
+
+            public static Vector2 Divide(Vector2 a, Vector2 b)
+            {
+                return new Vector2(a.x / b.x, a.y / b.y);
             }
         }
 

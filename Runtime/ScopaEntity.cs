@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
 
-namespace Scopa {
+namespace Scopa 
+{
     /// <summary> 
     /// General container to hold entity data, and coordinate targeting / input flow across multiple components.
     /// To configure your custom components with entity data, you have three options:

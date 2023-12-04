@@ -280,7 +280,8 @@ namespace Sledge.Formats.Map.Formats
 
                 face.XShift = (float) numbers[0];
                 face.YShift = (float) numbers[1];
-                face.Rotation = (float) numbers[2];
+                face.Rotation = (float) numbers[2]; // 11-30-23 currently rotation is not taken into account for uvs
+                //UnityEngine.Debug.Log(face.Rotation);
                 face.XScale = (float) numbers[3];
                 face.YScale = (float) numbers[4];
 

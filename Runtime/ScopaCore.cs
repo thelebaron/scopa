@@ -91,6 +91,8 @@ namespace Scopa {
                 CacheMaterialSearch();
             meshList = ScopaCore.AddGameObjectFromEntityRecursive(rootGameObject, mapFile.Worldspawn, mapName, defaultMaterial, config);
 
+            
+            
             // create a separate physics scene for the object, or else we can't raycast against it?
             // var csp = new CreateSceneParameters(LocalPhysicsMode.Physics3D);
             // var prefabScene = SceneManager.CreateScene("Scopa_PrefabScene", csp);
@@ -438,8 +440,18 @@ namespace Scopa {
                 //     smoothNormalAngle
                 // );
                 var newMesh = meshBuildJob.Complete();
+                //UnityEngine.Debug.Log(newMesh.isReadable);
                 meshList.Add(newMesh, newMeshObj.transform);
                 meshBuildJob = null;
+                
+                // Lightmap uvs which are absent from current scopa github version
+#if UNITY_EDITOR
+                if ( config.addLightmapUV2 ) {
+                    UnwrapParam.SetDefaults( out var unwrap);
+                    unwrap.packMargin *= 2;
+                    Unwrapping.GenerateSecondaryUVSet(newMesh, unwrap);
+                }
+#endif
 
                 // you can inherit ScopaMaterialConfig + override OnBuildMeshObject for extra per-material import logic
                 if ( textureKVP.Value.materialConfig != null ) {
@@ -547,13 +559,16 @@ namespace Scopa {
             if ( isNavigationStatic ) {
                 go.isStatic = true;
             } else {
+#if  UNITY_EDITOR
                 GameObjectUtility.SetStaticEditorFlags(go, StaticEditorFlags.ContributeGI 
-                    | StaticEditorFlags.OccluderStatic 
-                    | StaticEditorFlags.BatchingStatic 
-                    | StaticEditorFlags.OccludeeStatic 
-                    | StaticEditorFlags.OffMeshLinkGeneration 
-                    | StaticEditorFlags.ReflectionProbeStatic
-                );
+                                                           | StaticEditorFlags.OccluderStatic 
+                                                           | StaticEditorFlags.BatchingStatic 
+                                                           | StaticEditorFlags.OccludeeStatic 
+                                                           | StaticEditorFlags.OffMeshLinkGeneration 
+                                                           | StaticEditorFlags.ReflectionProbeStatic);
+#endif
+
+                
             }
         }
 
