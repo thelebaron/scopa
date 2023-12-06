@@ -485,7 +485,7 @@ namespace Scopa {
                 faceAngle.Dispose();
                 faceNormals.Dispose();
 
-                return newMesh;
+                return mesh;
             }
 
         }
