@@ -2,8 +2,9 @@
     "name": "Scopa.Editor",
     "rootNamespace": "",
     "references": [
-        "GUID:1904647ee12ba8c4ebcdf13639da2c4b",
-        "GUID:8c99226570017ef478306d84c29f0597"
+        "Scopa.Runtime",
+        "Sledge.Formats",
+        "Scopa.ECS"
     ],
     "includePlatforms": [
         "Editor"

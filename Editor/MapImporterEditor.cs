@@ -26,7 +26,8 @@ namespace Scopa.Editor {
 
             var internalConfig = serializedObject.FindProperty("config");
 
-            if ( GUI.Button( new Rect(EXTERNAL_CONFIG_FIELD_OFFSET-SAVE_BUTTON_WIDTH, 8, SAVE_BUTTON_WIDTH, 20), "Save as Asset...") ) {
+            if ( GUI.Button( new Rect(EXTERNAL_CONFIG_FIELD_OFFSET-SAVE_BUTTON_WIDTH, 8, SAVE_BUTTON_WIDTH, 20), "Save as Asset...") ) 
+            {
                 var newPath = EditorUtility.SaveFilePanelInProject("Export import settings as Map Config Asset...", "New Map Config Asset", "asset", "Save these MAP importer settings as an external asset, somewhere in your Assets folder.");
                 var configAsset = ScriptableObject.CreateInstance<ScopaMapConfigAsset>();
                 configAsset.config = internalConfig.GetSerializedValue<ScopaMapConfig>().ShallowCopy();
@@ -39,7 +40,8 @@ namespace Scopa.Editor {
             }
 
             SerializedObject externalConfigObj = null;
-            if (externalConfig.objectReferenceValue != null) {
+            if (externalConfig.objectReferenceValue != null) 
+            {
                 externalConfigObj = new SerializedObject(externalConfig.objectReferenceValue);
             }
             
@@ -69,11 +71,12 @@ namespace Scopa.Editor {
             base.Apply();
         }
 
-        protected override void ResetValues()
+        /* // ResetValues method is obsolete
+        protected override void Reset()
         {
             wasModified = false;
             base.ResetValues();
-        }
+        }*/
 
 
     }

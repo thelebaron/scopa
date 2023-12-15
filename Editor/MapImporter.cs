@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using System.Diagnostics;
+using Scopa.Scopa;
 using Debug = UnityEngine.Debug;
 
 #if UNITY_2020_2_OR_NEWER
@@ -33,8 +34,8 @@ namespace Scopa.Editor {
 
             var filepath = Application.dataPath + ctx.assetPath.Substring("Assets".Length);
 
-            var gameObject = ScopaCore.ImportMap(filepath, currentConfig, out var meshList);
-            ctx.AddObjectToAsset(gameObject.name, gameObject);
+            var mapObject = ScopaCore.ImportMap(filepath, currentConfig, out var meshList);
+            ctx.AddObjectToAsset(mapObject.name, mapObject);
 
             // we have to serialize every mesh as a subasset, or else it won't get saved
             foreach ( var meshKVP in meshList ) {
@@ -42,30 +43,59 @@ namespace Scopa.Editor {
                 EditorUtility.SetDirty(meshKVP.Key);
             //    PrefabUtility.RecordPrefabInstancePropertyModifications(mesh);
             }
-            ctx.SetMainObject(gameObject);
+            ctx.SetMainObject(mapObject);
 
-            EditorUtility.SetDirty(gameObject);
+            EditorUtility.SetDirty(mapObject);
             
             // additional
-            PostProcessLights(gameObject);
-            EditorUtility.SetDirty(gameObject);
+            PostProcessLights(mapObject);
+            PostProcessShadowCasters(mapObject);
+            PostProcessNavmeshBlockers(mapObject);
+            EditorUtility.SetDirty(mapObject);
         }
-
-        public void PostProcessLights(GameObject gameObject)
+        
+        public void PostProcessNavmeshBlockers(GameObject mapObject)
         {
             // get all children
-            var children = gameObject.GetComponentsInChildren<Transform>();
+            var children = mapObject.GetComponentsInChildren<Transform>();
 
             foreach (var child in children)
             {
-                // temp disable
-                //if (child.gameObject.name.ContainsIgnoreCase("light"))
+                if (!child.gameObject.TryGetComponent<MeshRenderer>(out var meshRenderer)) 
+                    continue;
+                
+                if (meshRenderer.sharedMaterial.name.ContainsIgnoreCase("NavBlocker") && !child.gameObject.GetComponent<NavmeshBlockerAuthoring>())
                 {
-                    TryAddLight(child.gameObject);
+                    meshRenderer.gameObject.AddComponent<NavmeshBlockerAuthoring>();
+                    meshRenderer.gameObject.layer = 2; // set to ignore raycast
                 }
             }
-            
+        }
+        
+        public void PostProcessShadowCasters(GameObject mapObject)
+        {
+            // get all children
+            var children = mapObject.GetComponentsInChildren<Transform>();
 
+            foreach (var child in children)
+            {
+                if (!child.gameObject.TryGetComponent<MeshRenderer>(out var meshRenderer)) 
+                    continue;
+                
+                if (meshRenderer.sharedMaterial.name.ContainsIgnoreCase("ShadowCaster") && !child.gameObject.GetComponent<ShadowCasterAuthoring>())
+                {
+                    meshRenderer.gameObject.AddComponent<ShadowCasterAuthoring>();
+                }
+            }
+        }
+        
+        public void PostProcessLights(GameObject mapObject)
+        {
+            // get all children
+            var children = mapObject.GetComponentsInChildren<Transform>();
+
+            foreach (var child in children)
+                TryAddLight(child.gameObject);
         }
 
         /// <summary>
@@ -99,7 +129,7 @@ namespace Scopa.Editor {
             if(entityData.ClassName.ContainsIgnoreCase("realtime"))
                 light.lightmapBakeType = LightmapBakeType.Realtime;
             if(entityData.ClassName.ContainsIgnoreCase("baked"))
-                light.lightmapBakeType = LightmapBakeType.Mixed;
+                light.lightmapBakeType = LightmapBakeType.Baked;
             if(entityData.ClassName.ContainsIgnoreCase("mixed"))
                 light.lightmapBakeType = LightmapBakeType.Mixed;
             

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using Sledge.Formats.Map.Formats;
 using Sledge.Formats.Map.Objects;
@@ -625,26 +626,29 @@ namespace Scopa {
 
         public class ColliderJobGroup {
 
-            NativeArray<int> faceVertexOffsets, faceTriIndexCounts, solidFaceOffsets; // index = i
-            NativeArray<Vector3> faceVertices, facePlaneNormals;
-            NativeArray<bool> canBeBoxCollider;
-            int vertCount, triIndexCount, faceCount;
+            private NativeArray<int>     faceVertexOffsets, faceTriIndexCounts, solidFaceOffsets; // index = i
+            private NativeArray<Vector3> faceVertices,      facePlaneNormals;
+            private NativeArray<bool>    canBeBoxCollider;
+            private int                  vertCount, triIndexCount, faceCount;
 
-            public GameObject gameObject;
-            public Mesh.MeshDataArray outputMesh;
-            JobHandle jobHandle;
-            Mesh[] meshes;
-            bool isTrigger, isConvex;
+            public  GameObject         gameObject;
+            public  Mesh.MeshDataArray outputMesh;
+            private JobHandle          jobHandle;
+            private Mesh[]             meshes;
+            private bool               isTrigger, isConvex;
+            private bool               ignoreCollider;
 
-            public ColliderJobGroup(GameObject gameObject, bool isTrigger, bool forceConvex, string colliderNameFormat, IEnumerable<Solid> solids, ScopaMapConfig config, Dictionary<Solid, Entity> mergedEntityData) {
+            public ColliderJobGroup(GameObject gameObject, bool isTrigger, bool ignoreCollider, bool forceConvex, string colliderNameFormat, IEnumerable<Solid> solids, ScopaMapConfig config, Dictionary<Solid, Entity> mergedEntityData) {
                 this.gameObject = gameObject;
 
                 var faceList = new List<Face>();
                 var solidFaceOffsetsManaged = new List<int>();
                 var solidCount = 0;
                 this.isTrigger = isTrigger;
+                this.ignoreCollider = ignoreCollider;
                 this.isConvex = forceConvex || config.colliderMode != ScopaMapConfig.ColliderImportMode.MergeAllToOneConcaveMeshCollider;
-                foreach( var solid in solids) {
+                foreach( var solid in solids) 
+                {
                     if (mergedEntityData.ContainsKey(solid) && (config.IsEntityNonsolid(mergedEntityData[solid].ClassName) || config.IsEntityTrigger(mergedEntityData[solid].ClassName)) )
                         continue;
 
@@ -669,34 +673,40 @@ namespace Scopa {
 
                 faceVertexOffsets = new NativeArray<int>(faceList.Count+1, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                 faceTriIndexCounts = new NativeArray<int>(faceList.Count+1, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-                for(int i=0; i<faceList.Count; i++) {
-                    faceVertexOffsets[i] = vertCount;
-                    vertCount += faceList[i].Vertices.Count;
-                    faceTriIndexCounts[i] = triIndexCount;
-                    triIndexCount += (faceList[i].Vertices.Count-2)*3;
+
+                for (var i = 0; i < faceList.Count; i++)
+                {
+                    faceVertexOffsets[i]  =  vertCount;
+                    vertCount             += faceList[i].Vertices.Count;
+                    faceTriIndexCounts[i] =  triIndexCount;
+                    triIndexCount         += (faceList[i].Vertices.Count - 2) * 3;
                 }
+                
                 faceVertexOffsets[faceVertexOffsets.Length-1] = vertCount;
                 faceTriIndexCounts[faceTriIndexCounts.Length-1] = triIndexCount;
 
                 faceVertices = new NativeArray<Vector3>(vertCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                 facePlaneNormals = new NativeArray<Vector3>(faceList.Count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-                for(int i=0; i<faceList.Count; i++) {
-                    for(int v=faceVertexOffsets[i]; v < faceVertexOffsets[i+1]; v++) {
-                        faceVertices[v] = faceList[i].Vertices[v-faceVertexOffsets[i]].ToUnity();
-                    }
+                
+                for (var i = 0; i < faceList.Count; i++)
+                {
+                    for (var v = faceVertexOffsets[i]; v < faceVertexOffsets[i + 1]; v++)
+                        faceVertices[v] = faceList[i].Vertices[v - faceVertexOffsets[i]].ToUnity();
                     facePlaneNormals[i] = faceList[i].Plane.Normal.ToUnity();
                 }
 
                 outputMesh = Mesh.AllocateWritableMeshData(solidCount);
                 meshes = new Mesh[solidCount];
-                for(int i=0; i<solidCount; i++) {
-                    meshes[i] = new Mesh();
-                    meshes[i].name = string.Format(colliderNameFormat, i.ToString("D5", System.Globalization.CultureInfo.InvariantCulture));
+                
+                for (var i = 0; i < solidCount; i++)
+                {
+                    meshes[i]      = new Mesh();
+                    meshes[i].name = string.Format(colliderNameFormat, i.ToString("D5", CultureInfo.InvariantCulture));
 
                     var solidOffsetStart = solidFaceOffsets[i];
-                    var solidOffsetEnd = solidFaceOffsets[i+1];
-                    var finalVertCount = faceVertexOffsets[solidOffsetEnd] - faceVertexOffsets[solidOffsetStart];
-                    var finalTriCount = faceTriIndexCounts[solidOffsetEnd] - faceTriIndexCounts[solidOffsetStart];
+                    var solidOffsetEnd   = solidFaceOffsets[i + 1];
+                    var finalVertCount   = faceVertexOffsets[solidOffsetEnd] - faceVertexOffsets[solidOffsetStart];
+                    var finalTriCount    = faceTriIndexCounts[solidOffsetEnd] - faceTriIndexCounts[solidOffsetStart];
 
                     var meshData = outputMesh[i];
                     meshData.SetVertexBufferParams(finalVertCount,
@@ -726,30 +736,42 @@ namespace Scopa {
                 jobHandle = jobData.Schedule(solidCount, 64);
             }
 
-            public Mesh[] Complete() {
+            public Mesh[] Complete() 
+            {
                 jobHandle.Complete();
-
                 Mesh.ApplyAndDisposeWritableMeshData(outputMesh, meshes);
-                for (int i = 0; i < meshes.Length; i++) {
-                    Mesh newMesh = meshes[i];
-                    var newGO = new GameObject(newMesh.name);
-                    newGO.transform.SetParent( gameObject.transform );
-                    newGO.transform.localPosition = Vector3.zero;
-                    newGO.transform.localRotation = Quaternion.identity;
-                    newGO.transform.localScale = Vector3.one;
-
-                    newMesh.RecalculateBounds();
-                    if (canBeBoxCollider[i]) { // if box collider, we'll just use the mesh bounds to config a collider
-                        var bounds = newMesh.bounds;
-                        var boxCol = newGO.AddComponent<BoxCollider>();
-                        boxCol.center = bounds.center;
-                        boxCol.size = bounds.size;
+                
+                for (int i = 0; i < meshes.Length; i++) 
+                {
+                    var mesh = meshes[i];
+                    mesh.RecalculateBounds();
+                    
+                    // skip making a collider child if marked ignore collider
+                    if(ignoreCollider)
+                        continue;
+                    
+                    var colliderChild = new GameObject(mesh.name);
+                    colliderChild.transform.SetParent( gameObject.transform );
+                    colliderChild.transform.localPosition = Vector3.zero;
+                    colliderChild.transform.localRotation = Quaternion.identity;
+                    colliderChild.transform.localScale = Vector3.one;
+                    
+                    if (canBeBoxCollider[i])
+                    {
+                        // if box collider, we'll just use the mesh bounds to config a collider
+                        var bounds = mesh.bounds;
+                        var boxCol = colliderChild.AddComponent<BoxCollider>();
+                        boxCol.center    = bounds.center;
+                        boxCol.size      = bounds.size;
                         boxCol.isTrigger = isTrigger;
-                    } else { // but usually this is a convex mesh collider
-                        var newMeshCollider = newGO.AddComponent<MeshCollider>();
-                        newMeshCollider.convex = isTrigger ? true : isConvex;
-                        newMeshCollider.isTrigger = isTrigger;
-                        newMeshCollider.sharedMesh = newMesh;
+                    }
+                    else
+                    {
+                        // but usually this is a convex mesh collider
+                        var newMeshCollider = colliderChild.AddComponent<MeshCollider>();
+                        newMeshCollider.convex     = isTrigger ? true : isConvex;
+                        newMeshCollider.isTrigger  = isTrigger;
+                        newMeshCollider.sharedMesh = mesh;
                     }
                 }
 

@@ -325,12 +325,14 @@ namespace Scopa {
 
             // begin collision jobs
             ScopaMesh.ColliderJobGroup colliderJob = null;
-            if ( config.colliderMode != ScopaMapConfig.ColliderImportMode.None && entityNeedsCollider ) {
-                bool isTrigger = config.IsEntityTrigger(entData.ClassName);
-                bool forceConvex = entData.TryGetInt("_convex", out var num) && num == 1;
+            if (config.colliderMode != ScopaMapConfig.ColliderImportMode.None && entityNeedsCollider) 
+            {
+                bool isTrigger      = config.IsEntityTrigger(entData.ClassName);
+                var  ignoreCollider = config.IsEntityIgnoreCollider(entData.ClassName);
+                bool forceConvex    = entData.TryGetInt("_convex", out var num) && num == 1;
                 colliderJob = new ScopaMesh.ColliderJobGroup(
                     entityObject, 
-                    isTrigger, 
+                    isTrigger, ignoreCollider,
                     forceConvex,
                     entityObject.name + "_Collider{0}", 
                     solids, 

@@ -1,0 +1,25 @@
+{
+    "name": "Scopa.ECS",
+    "rootNamespace": "",
+    "references": [
+        "Unity.Burst",
+        "Unity.Collections",
+        "Unity.Entities",
+        "Unity.Mathematics",
+        "Unity.Entities.Graphics",
+        "Unity.Transforms",
+        "Unity.Entities.Hybrid",
+        "Unity.AI.Navigation",
+        "UnityEngine.UI",
+        "Scopa.Runtime"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

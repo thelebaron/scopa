@@ -3,16 +3,22 @@ using UnityEngine.Serialization;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-
+#if UNITY_EDITOR
+using UnityEditorInternal;
+#endif
 namespace Scopa {
     /// <summary> ScriptableObject to use for configuring how Scopa imports .MAPs, even for runtime imports too. </summary>
     [CreateAssetMenu(fileName = "New ScopaMapConfig", menuName = "Scopa/MAP Config Asset", order = 1)]
     public class ScopaMapConfigAsset : ScriptableObject {
         public ScopaMapConfig config = new ScopaMapConfig();
     }
+    
+    // todo: make proper editor for this as you cannot modify a list in the current inspector, due to using a scriptableobject with reorderablelist, without hijinks.
+    // quick workaround is to make sure it has a custom asset for settings and set any list modifications there(or open it in a text editor).
 
     [System.Serializable]
-    public class ScopaMapConfig {
+    public class ScopaMapConfig 
+    {
         [Header("MESHES")]
 
         [Tooltip("(default: 0.03125, 1 m = 32 units) The global scaling factor for all brush geometry and entity origins.")]
@@ -57,6 +63,9 @@ namespace Scopa {
 
         [Tooltip("(default: trigger, water) If an entity's classname contains a word in this list, mark that collider as a non-solid trigger and disable Navigation Static for it.")]
         public List<string> triggerEntities = new List<string>() {"trigger", "water"};
+        
+        [Tooltip("(default: func_plat) If an entity classname contains any word in this list, do not add a collider to it")]
+        public List<string> ignoreColliderEntities = new List<string>() {"func_plat"};
 
 
         [Space(), Header("TEXTURES & MATERIALS")]
@@ -84,6 +93,9 @@ namespace Scopa {
 
         [Tooltip("(default: worldspawn, func_wall) If an entity classname contains any word in this list AND it doesn't have prefab overrides (see Entity Overrides), then set its mesh objects to be static -- batching, lightmapping, navigation, reflection, everything. However, non-solid and trigger entities will NOT be navigation static.")]
         public List<string> staticEntities = new List<string>() {"worldspawn", "func_wall"};
+        
+
+
 
         [Tooltip("(default: Default) Set ALL objects to use this layer. For example, maybe you have a 'World' layer. To set per-entity layers, see prefab slots below / Entity Overrides.")]
         [Layer] public int layer = 0;
@@ -168,7 +180,18 @@ namespace Scopa {
             }
             return false;
         }
-
+        
+        /// <summary> note: entityClassname must already be ToLowerInvariant() </summary>
+        public bool IsEntityIgnoreCollider(string entityClassname) {
+            var search = entityClassname;
+            for(int i=0; i<ignoreColliderEntities.Count; i++) {
+                if ( search.Contains(ignoreColliderEntities[i]) ) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
         /// <summary> note: textureName must already be ToLowerInvariant() </summary>
         public MaterialOverride GetMaterialOverrideFor(string textureName) {
             if ( materialOverrides == null || materialOverrides.Length == 0) {
